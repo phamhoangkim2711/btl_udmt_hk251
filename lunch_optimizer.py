@@ -82,13 +82,13 @@ df_default.index.name = 'food_name'
 
 # --- HÀM CHÍNH CỦA STREAMLIT ---
 def main():
-    st.title("🥪 Tối Ưu Hóa Chi Phí Bữa Trưa")
+    st.title("🥪 TỐI ƯU HÓA CHI PHÍ BỮA TRƯA")
     st.markdown("Sử dụng **Lập trình Tuyến tính** (PuLP) để tìm bữa ăn với chi phí thấp nhất đáp ứng yêu cầu dinh dưỡng.")
     
     st.divider()
 
     ## 1. PHẦN NHẬP DỮ LIỆU (Bảng tương tác)
-    st.header("1. Nhập và Chỉnh Sửa Dữ Liệu Thực Phẩm")
+    st.header("1. Nhập và chỉnh sửa dữ liệu thực phẩm")
     st.markdown("⚠️ **Lưu ý:** Tên món ăn cần viết liền không dấu, không khoảng trắng (ví dụ: `peanut_butter`).")
     st.markdown("Tất cả giá trị phải là số và $\ge 0$.")
     
@@ -115,7 +115,7 @@ def main():
     for food_name, data in foods_input.items():
         if data['cal_fat'] > data['total_cal']:
             st.error(
-                f"❌ LỖI LOGIC: Món **{food_name}** có lượng Calories từ Chất Béo ({data['cal_fat']:.2f}) "
+                f"❌ LỖI LOGIC: Món **{food_name}** có lượng Calories từ chất béo ({data['cal_fat']:.2f}) "
                 f"lớn hơn Tổng Calo ({data['total_cal']:.2f}). Vui lòng sửa lại dữ liệu trong bảng."
             )
             data_is_valid = False
@@ -180,3 +180,4 @@ def main():
 if __name__ == "__main__":
 
     main()
+
