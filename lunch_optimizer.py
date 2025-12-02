@@ -83,7 +83,7 @@ df_default.index.name = 'food_name'
 # --- HÀM CHÍNH CỦA STREAMLIT ---
 def main():
     st.title("🥪 Tối Ưu Hóa Chi Phí Bữa Trưa")
-    st.markdown("Sử dụng **Lập trình Tuyến tính** (PuLP) để tìm bữa ăn rẻ nhất đáp ứng yêu cầu dinh dưỡng.")
+    st.markdown("Sử dụng **Lập trình Tuyến tính** (PuLP) để tìm bữa ăn với chi phí thấp nhất đáp ứng yêu cầu dinh dưỡng.")
     
     st.divider()
 
@@ -115,7 +115,7 @@ def main():
     for food_name, data in foods_input.items():
         if data['cal_fat'] > data['total_cal']:
             st.error(
-                f"❌ LỖI LOGIC: Món **{food_name}** có Calo từ Béo ({data['cal_fat']:.2f}) "
+                f"❌ LỖI LOGIC: Món **{food_name}** có lượng Calories từ Chất Béo ({data['cal_fat']:.2f}) "
                 f"lớn hơn Tổng Calo ({data['total_cal']:.2f}). Vui lòng sửa lại dữ liệu trong bảng."
             )
             data_is_valid = False
@@ -124,9 +124,9 @@ def main():
     st.divider()
 
     ## 2. PHẦN CHẠY MÔ HÌNH VÀ KẾT QUẢ
-    st.header("2. Kết Quả Tối Ưu Hóa")
+    st.header("2. Kết quả tối ưu hóa")
 
-    if st.button("Chạy Mô Hình Tối Ưu", disabled=not data_is_valid):
+    if st.button("Chạy mô hình tối ưu", disabled=not data_is_valid):
         
         # Chạy mô hình PuLP
         optimal_cost, result_data = run_optimization(foods_input)
@@ -138,14 +138,14 @@ def main():
             
             # Hiển thị Chi phí
             with col1:
-                st.metric("Chi Phí Tối Thiểu", f"{optimal_cost:.2f} ¢")
+                st.metric("Chi phí tối thiểu", f"{optimal_cost:.2f} ¢")
             
             # Tạo bảng kết quả số lượng
             solution_df = pd.DataFrame(
                 result_data.items(), 
-                columns=['Thực Phẩm', 'Số Lượng Tối Ưu']
+                columns=['Thực phẩm', 'Số lượng tối ưu']
             )
-            solution_df['Số Lượng Tối Ưu'] = solution_df['Số Lượng Tối Ưu'].astype(int)
+            solution_df['Số lượng tối ưu'] = solution_df['Số lượng tối ưu'].astype(int)
             
             with col2:
                  st.dataframe(solution_df, use_container_width=True, hide_index=True)
@@ -162,7 +162,7 @@ def main():
             protein = sum(foods_input[name]['protein'] * result_data[name] for name in result_data)
             
             st.table(pd.DataFrame({
-                'Chỉ Số': ['Tổng Calo (kcal)', 'Calo từ Béo (kcal)', 'Vitamin C (mg)', 'Protein (g)'],
+                'Chỉ Số': ['Tổng Calo (kcal)', 'Calo từ chất béo (kcal)', 'Vitamin C (mg)', 'Protein (g)'],
                 'Giá Trị Đạt Được': [f"{total_cal:.2f}", f"{cal_fat:.2f}", f"{vit_c:.2f}", f"{protein:.2f}"],
                 'Yêu Cầu Ràng Buộc': [
                     '400 - 600', 
@@ -178,4 +178,5 @@ def main():
     st.caption("Mô hình được giải quyết bằng PuLP (Integer Linear Programming).")
 
 if __name__ == "__main__":
+
     main()
