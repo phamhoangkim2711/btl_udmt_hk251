@@ -134,7 +134,7 @@ def run_optimization(foods_data: dict, custom_constraints: List[CustomConstraint
 
 # --- HÀM CHÍNH CỦA STREAMLIT ---
 def main():
-    st.title("🥪 TỐI ƯU HÓA CHI PHÍ BỮA TRƯA (Tùy chỉnh cột ổn định)")
+    st.title("🥪 TỐI ƯU HÓA CHI PHÍ BỮA TRƯA")
     st.markdown("Định nghĩa các cột chất dinh dưỡng (tên) trước, sau đó nhập dữ liệu vào bảng.")
 
     st.divider()
@@ -371,4 +371,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
