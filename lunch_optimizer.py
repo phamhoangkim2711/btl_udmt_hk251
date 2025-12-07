@@ -17,8 +17,11 @@ DEFAULT_FOODS_DICT = {
     'bread': {'cost': 5.0, 'cal_fat': 10.0, 'total_cal': 70.0, 'vit_c': 0.0, 'protein': 3.0},
     'peanut_butter': {'cost': 4.0, 'cal_fat': 75.0, 'total_cal': 100.0, 'vit_c': 0.0, 'protein': 4.0},
     'jelly': {'cost': 7.0, 'cal_fat': 0.0, 'total_cal': 50.0, 'vit_c': 3.0, 'protein': 0.0},
+    'cracker': {'cost': 8.0, 'cal_fat': 20.0, 'total_cal': 60.0, 'vit_c': 0.0, 'protein': 1.0},
     'milk': {'cost': 15.0, 'cal_fat': 70.0, 'total_cal': 150.0, 'vit_c': 2.0, 'protein': 8.0},
+    'juice': {'cost': 35.0, 'cal_fat': 0.0, 'total_cal': 100.0, 'vit_c': 120.0, 'protein': 1.0}
 }
+
 DEFAULT_COLUMNS = list(DEFAULT_FOODS_DICT['bread'].keys()) # cost, cal_fat, total_cal, vit_c, protein
 
 # DataFrame mặc định cho ràng buộc tổng hợp
@@ -368,3 +371,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
