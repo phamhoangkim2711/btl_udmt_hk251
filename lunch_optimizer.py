@@ -4,42 +4,44 @@ import pulp
 from typing import List, Dict, Any
 
 # --- CẤU HÌNH TRANG STREAMLIT ---
-st.set_page_config(layout="wide", page_title="Tối Ưu Hóa Bữa Trưa (Custom Data Columns)")
+st.set_page_config(layout="wide", page_title="Tối Ưu Hóa Bữa Trưa (Ràng buộc từng món)")
 
 # Định nghĩa kiểu dữ liệu cho ràng buộc tùy chỉnh
 CustomConstraint = Dict[str, Any]
 
 # --- DỮ LIỆU VÀ HÀM CỐ ĐỊNH ---
 
-# Dữ liệu mặc định (Lưu ý: Chỉ dùng để khởi tạo, không giới hạn cột)
+# Dữ liệu mặc định ĐÃ THÊM CÁC CỘT ĐỊNH LƯỢNG CHO TỪNG MÓN
 DEFAULT_FOODS_DATA = {
-    'bread': {'cost': 5, 'cal_fat': 10, 'total_cal': 70, 'vit_c': 0, 'protein': 3},
-    'peanut_butter': {'cost': 4, 'cal_fat': 75, 'total_cal': 100, 'vit_c': 0, 'protein': 4},
-    'jelly': {'cost': 7, 'cal_fat': 0, 'total_cal': 50, 'vit_c': 3, 'protein': 0},
-    'cracker': {'cost': 8, 'cal_fat': 20, 'total_cal': 60, 'vit_c': 0, 'protein': 1},
-    'milk': {'cost': 15, 'cal_fat': 70, 'total_cal': 150, 'vit_c': 2, 'protein': 8},
-    'juice': {'cost': 35, 'cal_fat': 0, 'total_cal': 100, 'vit_c': 120, 'protein': 1}
+    'bread': {'cost': 5, 'cal_fat': 10, 'total_cal': 70, 'vit_c': 0, 'protein': 3, 'min_qty': 0, 'max_qty': 4},
+    'peanut_butter': {'cost': 4, 'cal_fat': 75, 'total_cal': 100, 'vit_c': 0, 'protein': 4, 'min_qty': 0, 'max_qty': 2},
+    'jelly': {'cost': 7, 'cal_fat': 0, 'total_cal': 50, 'vit_c': 3, 'protein': 0, 'min_qty': 0, 'max_qty': 2},
+    'cracker': {'cost': 8, 'cal_fat': 20, 'total_cal': 60, 'vit_c': 0, 'protein': 1, 'min_qty': 0, 'max_qty': 5},
+    'milk': {'cost': 15, 'cal_fat': 70, 'total_cal': 150, 'vit_c': 2, 'protein': 8, 'min_qty': 0, 'max_qty': 1},
+    'juice': {'cost': 35, 'cal_fat': 0, 'total_cal': 100, 'vit_c': 120, 'protein': 1, 'min_qty': 0, 'max_qty': 1}
 }
 
-# DataFrame mặc định cho bảng ràng buộc
-DEFAULT_CONSTRAINTS_DF = pd.DataFrame({
+# DataFrame mặc định cho bảng ràng buộc Tổng Bữa Ăn
+DEFAULT_AGGREGATE_CONSTRAINTS_DF = pd.DataFrame({
     'Nutrient': ['cost'],
     'Operator': ['<='],
     'Value': [200.0]
 })
 
-def run_optimization(foods_data: dict, custom_constraints: List[CustomConstraint]):
+def run_optimization(foods_data: dict, aggregate_constraints: List[CustomConstraint]):
     """
-    Hàm giải mô hình tối ưu hóa ăn trưa sử dụng PuLP, có thêm ràng buộc tùy chỉnh.
+    Hàm giải mô hình tối ưu hóa ăn trưa, có thêm ràng buộc min/max cho từng thực phẩm,
+    và ràng buộc tổng cho cả bữa ăn.
     """
     if not foods_data:
         return None, "Lỗi: Không có dữ liệu thực phẩm để chạy mô hình."
 
     food_names = list(foods_data.keys())
     model = pulp.LpProblem("Lunch Optimization Flexible", pulp.LpMinimize)
+    # x: Biến quyết định, là số lượng mỗi loại thực phẩm (số nguyên >= 0)
     x = pulp.LpVariable.dicts("X", food_names, lowBound=0, cat='Integer')
 
-    # Lấy danh sách các thuộc tính hợp lệ từ thực phẩm đầu tiên (để kiểm tra ràng buộc)
+    # Lấy danh sách các thuộc tính hợp lệ từ thực phẩm đầu tiên
     valid_food_attributes = set(foods_data[food_names[0]].keys()) if food_names else set()
 
     # --- 1. HÀM MỤC TIÊU (Minimize Cost) ---
@@ -51,7 +53,23 @@ def run_optimization(foods_data: dict, custom_constraints: List[CustomConstraint
         "Total_Cost"
     )
 
-    # --- 2. RÀNG BUỘC CỐ ĐỊNH (Chỉ thêm nếu cột tồn tại) ---
+    # --- 2. RÀNG BUỘC THEO TỪNG THỰC PHẨM (Item-Specific Constraints) ---
+    # Sử dụng các cột 'min_qty' và 'max_qty' do người dùng nhập.
+    
+    if 'min_qty' in valid_food_attributes and 'max_qty' in valid_food_attributes:
+        for name in food_names:
+            min_val = foods_data[name].get('min_qty', 0)
+            max_val = foods_data[name].get('max_qty', 100) # Giả định max mặc định là 100 nếu không được nhập
+
+            # Ràng buộc Tối thiểu
+            if min_val > 0:
+                model += (x[name] >= min_val, f"Item_Min_Qty_{name}")
+            
+            # Ràng buộc Tối đa
+            if max_val >= 0 and max_val < 100:
+                model += (x[name] <= max_val, f"Item_Max_Qty_{name}")
+
+    # --- 3. RÀNG BUỘC TỔNG BỮA ĂN CỐ ĐỊNH (Fixed Aggregate Constraints) ---
     
     # Ràng buộc Calo (C1, C2, C3)
     if 'total_cal' in valid_food_attributes and 'cal_fat' in valid_food_attributes:
@@ -70,29 +88,27 @@ def run_optimization(foods_data: dict, custom_constraints: List[CustomConstraint
     if 'protein' in valid_food_attributes:
         model += (pulp.lpSum(foods_data[name]['protein'] * x[name] for name in food_names) >= 12, "Fixed_Min_Protein")
 
-    # RÀNG BUỘC ĐẶC BIỆT
-    if 'bread' in food_names:
-        model += (x['bread'] == 2, "Fixed_Exact_2_Slices_Bread")
+    # RÀNG BUỘC ĐẶC BIỆT CỐ ĐỊNH KHÁC (C6, C7)
+    # Lưu ý: Các ràng buộc này nên được thay bằng min_qty/max_qty ở mục 2
+    # Nhưng giữ lại cho tính kế thừa của mô hình cũ.
+    if 'bread' in food_names and 'min_qty' not in valid_food_attributes and 'max_qty' not in valid_food_attributes:
+        # Nếu người dùng không nhập min/max, ta vẫn giữ ràng buộc cũ
+        model += (x['bread'] == 2, "Fixed_Exact_2_Slices_Bread_Legacy")
 
     if 'peanut_butter' in food_names and 'jelly' in food_names:
         model += (x['peanut_butter'] - 2 * x['jelly'] >= 0, "Fixed_Peanut_Butter_vs_Jelly")
 
-    liquid_items = [name for name in ['milk', 'juice'] if name in food_names]
-    if liquid_items:
-        model += (pulp.lpSum(x[name] for name in liquid_items) >= 1, "Fixed_Min_1_Cup_Liquid")
-
-    # --- 3. RÀNG BUỘC TÙY CHỈNH (Custom Constraints) ---
-    for i, constraint in enumerate(custom_constraints):
+    # --- 4. RÀNG BUỘC TỔNG BỮA ĂN TÙY CHỈNH (Custom Aggregate Constraints) ---
+    for i, constraint in enumerate(aggregate_constraints):
         nutrient = constraint.get('Nutrient', '').strip()
         operator = constraint.get('Operator', '').strip()
         value = constraint.get('Value', 0)
 
-        # Kiểm tra tính hợp lệ
-        if nutrient in valid_food_attributes and operator in ['>=', '<=', '=']:
+        # Kiểm tra tính hợp lệ và đảm bảo không trùng với các cột điều chỉnh số lượng min/max
+        if nutrient in valid_food_attributes and nutrient not in ['min_qty', 'max_qty'] and operator in ['>=', '<=', '=']:
             total_expr = pulp.lpSum(foods_data[name].get(nutrient, 0) * x[name] for name in food_names)
             
-            # Thêm ràng buộc vào mô hình
-            constraint_name = f"Custom_Constraint_{i+1}_{nutrient}_{operator}_{value}"
+            constraint_name = f"Custom_Aggregate_{i+1}_{nutrient}_{operator}_{value}"
             if operator == '>=':
                 model += (total_expr >= value, constraint_name)
             elif operator == '<=':
@@ -100,7 +116,7 @@ def run_optimization(foods_data: dict, custom_constraints: List[CustomConstraint
             elif operator == '=':
                 model += (total_expr == value, constraint_name)
 
-    # --- 4. GIẢI MÔ HÌNH ---
+    # --- 5. GIẢI MÔ HÌNH ---
     model.solve()
 
     if model.status == pulp.LpStatusOptimal:
@@ -115,50 +131,60 @@ def run_optimization(foods_data: dict, custom_constraints: List[CustomConstraint
 
 # --- HÀM CHÍNH CỦA STREAMLIT ---
 def main():
-    st.title("🥪 TỐI ƯU HÓA CHI PHÍ BỮA TRƯA (Tùy chỉnh cột dữ liệu)")
-    st.markdown("Bạn có thể thêm/xóa cột và hàng để định nghĩa các chất dinh dưỡng mới.")
+    st.title("🥪 TỐI ƯU HÓA CHI PHÍ BỮA TRƯA (Ràng buộc từng món & Tổng bữa ăn)")
+    st.markdown("Bạn có thể định nghĩa các chất dinh dưỡng, thêm **số lượng tối đa/tối thiểu** cho từng món, và đặt ràng buộc tổng cho cả bữa ăn.")
     
     st.divider()
 
     ## 1. PHẦN NHẬP DỮ LIỆU THỰC PHẨM
-    st.header("1. Nhập và chỉnh sửa dữ liệu thực phẩm")
+    st.header("1. Nhập và chỉnh sửa dữ liệu thực phẩm & Ràng buộc Số lượng")
     st.markdown("⚠️ **Lưu ý:**")
     st.markdown("* Cột **`cost`** là bắt buộc.")
-    st.markdown("* Tên món ăn và tên cột cần viết liền không dấu (ví dụ: `fiber`, `vitamin_a`).")
+    st.markdown("* Cột **`min_qty`** và **`max_qty`** cho phép bạn đặt ràng buộc số lượng riêng cho từng món ăn.")
     
     # --- CƠ CHẾ TÙY CHỈNH CỘT DỮ LIỆU ---
     
-    # 1.1 Khởi tạo DataFrame có thể chỉnh sửa tên cột
-    if 'editable_df' not in st.session_state:
-        st.session_state.editable_df = pd.DataFrame.from_dict(DEFAULT_FOODS_DATA, orient='index')
-        st.session_state.editable_df.index.name = 'food_name'
+    if 'editable_df_v2' not in st.session_state:
+        st.session_state.editable_df_v2 = pd.DataFrame.from_dict(DEFAULT_FOODS_DATA, orient='index')
+        st.session_state.editable_df_v2.index.name = 'food_name'
 
-    # 1.2 Hiển thị data_editor cho phép thêm/xóa cột
-    # Sử dụng `column_config` tự động
-    
+    # Thiết lập cấu hình cột
     col_config = {}
-    for col in st.session_state.editable_df.columns:
-         col_config[col] = st.column_config.NumberColumn(
+    for col in st.session_state.editable_df_v2.columns:
+        if col in ['min_qty', 'max_qty']:
+            col_config[col] = st.column_config.NumberColumn(
+                f"{col.replace('_', ' ').title()} (Ràng buộc)", 
+                min_value=0,
+                step=1,
+                format="%d" # Chỉ cho phép số nguyên
+            )
+        elif col == 'cost':
+             col_config[col] = st.column_config.NumberColumn(
+                f"{col.replace('_', ' ').title()} (¢)", 
+                min_value=0.0,
+                format="%.2f",
+                required=True
+            )
+        else:
+            col_config[col] = st.column_config.NumberColumn(
                 f"{col.replace('_', ' ').title()}", 
                 min_value=0.0,
                 format="%.2f"
             )
 
     edited_df = st.data_editor(
-        st.session_state.editable_df,
+        st.session_state.editable_df_v2,
         column_config=col_config,
-        num_rows="dynamic", # Cho phép thêm/xóa hàng
+        num_rows="dynamic", 
         use_container_width=True,
-        key="food_data_editor"
+        key="food_data_editor_v2"
     )
     
-    st.session_state.editable_df = edited_df.copy() # Cập nhật trạng thái
+    st.session_state.editable_df_v2 = edited_df.copy()
 
-    # Chuyển DataFrame đã chỉnh sửa về dict cho PuLP
     foods_input = edited_df.to_dict('index')
     
-    # Cập nhật danh sách thuộc tính hợp lệ sau khi người dùng chỉnh sửa
-    if not edited_df.empty:
+    if not edited_df.empty and len(edited_df.columns) > 0:
         valid_attributes = list(edited_df.columns)
     else:
         valid_attributes = []
@@ -170,37 +196,38 @@ def main():
         st.error("❌ LỖI: Cột **`cost`** là bắt buộc để tối ưu hóa.")
         data_is_valid = False
     
-    # Kiểm tra logic Calo nếu các cột tồn tại
-    if 'cal_fat' in valid_attributes and 'total_cal' in valid_attributes:
+    # Kiểm tra min_qty <= max_qty
+    if 'min_qty' in valid_attributes and 'max_qty' in valid_attributes:
         for food_name, data in foods_input.items():
-            if data.get('cal_fat', 0) > data.get('total_cal', 0):
+            if data.get('min_qty', 0) > data.get('max_qty', 100):
                 st.error(
-                    f"❌ LỖI LOGIC: Món **{food_name}** có Calo từ béo ({data['cal_fat']:.2f}) "
-                    f"lớn hơn Tổng Calo ({data['total_cal']:.2f})."
+                    f"❌ LỖI LOGIC: Món **{food_name}** có Số lượng Tối thiểu ({data['min_qty']:.0f}) "
+                    f"lớn hơn Số lượng Tối đa ({data['max_qty']:.0f})."
                 )
                 data_is_valid = False
                 break
 
     st.divider()
     
-    ## 2. RÀNG BUỘC TÙY CHỈNH
-    st.header("2. Thêm Ràng Buộc Tùy Chỉnh")
-    st.markdown(f"**Các chất dinh dưỡng hợp lệ:** `{', '.join(valid_attributes)}`")
+    ## 2. RÀNG BUỘC TỔNG BỮA ĂN TÙY CHỈNH
+    st.header("2. Thêm Ràng Buộc Tùy Chỉnh cho TỔNG BỮA ĂN")
     
-    operator_options = ['>=', '<=', '=']
+    # Lọc danh sách thuộc tính hợp lệ cho ràng buộc tổng (loại bỏ min_qty, max_qty)
+    aggregate_options = [attr for attr in valid_attributes if attr not in ['min_qty', 'max_qty']]
+    st.markdown(f"**Các thuộc tính hợp lệ (đã nhập ở trên):** `{', '.join(aggregate_options)}`")
 
     custom_constraints_df = st.data_editor(
-        DEFAULT_CONSTRAINTS_DF,
+        DEFAULT_AGGREGATE_CONSTRAINTS_DF,
         column_config={
             "Nutrient": st.column_config.SelectboxColumn(
                 "Chất dinh dưỡng",
-                options=valid_attributes, # Tùy chỉnh danh sách dựa trên bảng thực phẩm
+                options=aggregate_options, # Tùy chỉnh danh sách
                 required=True,
-                help="Chọn thuộc tính của thực phẩm (Tên cột)."
+                help="Chọn thuộc tính tổng của cả bữa ăn."
             ),
             "Operator": st.column_config.SelectboxColumn(
                 "Toán tử",
-                options=operator_options,
+                options=['>=', '<=', '='],
                 required=True,
                 help="Chọn toán tử so sánh (>=, <=, =)."
             ),
@@ -214,10 +241,10 @@ def main():
         },
         num_rows="dynamic",
         use_container_width=True,
-        key="custom_constraints_editor"
+        key="custom_constraints_editor_v2"
     )
     
-    custom_constraints = custom_constraints_df.to_dict('records')
+    aggregate_constraints = custom_constraints_df.to_dict('records')
 
     st.divider()
 
@@ -227,9 +254,9 @@ def main():
     if st.button("🚀 Chạy mô hình tối ưu", disabled=not data_is_valid or edited_df.empty):
         
         # Chạy mô hình PuLP
-        optimal_cost, result_data = run_optimization(foods_input, custom_constraints)
+        optimal_cost, result_data = run_optimization(foods_input, aggregate_constraints)
 
-        if optimal_cost is not None:
+        if optimal_cost is not None and isinstance(result_data, dict):
             st.success("✅ **ĐÃ TÌM THẤY KẾT QUẢ TỐI ƯU**")
             
             col1, col2 = st.columns([1, 2])
@@ -252,38 +279,41 @@ def main():
             st.subheader("Kiểm tra Giá trị đạt được:")
             
             # Tính toán tất cả các thuộc tính của giải pháp tối ưu
-            summary_data = {'Chỉ Số': [], 'Giá Trị Đạt Được': [], 'Ràng Buộc Cố Định (nếu có)': []}
+            display_attributes = ['cost'] + sorted([attr for attr in aggregate_options if attr != 'cost'])
             
-            # Tính toán các giá trị đạt được
-            for attr in valid_attributes:
+            summary_data = {'Chỉ Số': [], 'Giá Trị Đạt Được (Tổng)': [], 'Ràng Buộc Mục Tiêu/Cố Định': []}
+            
+            # 1. Tính toán giá trị đạt được cho các thuộc tính hợp lệ
+            for attr in display_attributes:
                 current_value = sum(foods_input[name].get(attr, 0) * result_data.get(name, 0) for name in foods_input)
-                summary_data['Chỉ Số'].append(attr.replace('_', ' ').title())
-                summary_data['Giá Trị Đạt Được'].append(f"{current_value:.2f}")
-
-                # Thêm yêu cầu ràng buộc cố định (cho các cột cũ)
+                
+                # --- Xác định Ràng Buộc Cố Định (Fixed Aggregate Constraint) ---
                 fixed_req = 'N/A'
                 if attr == 'cost': fixed_req = 'Minimize'
-                elif attr == 'total_cal': fixed_req = '400 - 600'
-                elif attr == 'cal_fat': fixed_req = f'<= 30% ({0.3 * current_value:.2f} kcal)' if 'total_cal' in valid_attributes else 'N/A'
+                elif attr == 'total_cal': fixed_req = '400 <= Value <= 600'
+                elif attr == 'cal_fat': 
+                    total_cal_value = sum(foods_input[name].get('total_cal', 0) * result_data.get(name, 0) for name in foods_input)
+                    fixed_req = f'<= 30% Tổng Calo ({0.30 * total_cal_value:.2f})' if 'total_cal' in valid_attributes else 'N/A'
                 elif attr == 'vit_c': fixed_req = '>= 60 mg'
                 elif attr == 'protein': fixed_req = '>= 12 g'
                 
-                summary_data['Ràng Buộc Cố Định (nếu có)'].append(fixed_req)
+                summary_data['Chỉ Số'].append(attr.replace('_', ' ').title())
+                summary_data['Giá Trị Đạt Được (Tổng)'].append(f"{current_value:.2f}")
+                summary_data['Ràng Buộc Mục Tiêu/Cố Định'].append(fixed_req)
 
-            # Thêm các ràng buộc tùy chỉnh để dễ kiểm tra
-            for i, constraint in enumerate(custom_constraints):
+            # 2. Thêm các ràng buộc tùy chỉnh (Aggregate)
+            for i, constraint in enumerate(aggregate_constraints):
                  nutrient = constraint.get('Nutrient', '').strip()
                  operator = constraint.get('Operator', '').strip()
                  value = constraint.get('Value', 0)
-                 if nutrient and operator in ['>=', '<=', '='] and nutrient in valid_attributes:
-                    # Tìm giá trị đã tính cho thuộc tính này
-                    idx = valid_attributes.index(nutrient)
-                    achieved_value = summary_data['Giá Trị Đạt Được'][idx]
+                 
+                 if nutrient and operator in ['>=', '<=', '='] and nutrient in aggregate_options:
+                     achieved_value = sum(foods_input[name].get(nutrient, 0) * result_data.get(name, 0) for name in foods_input)
 
-                    summary_data['Chỉ Số'].append(f"Custom: {nutrient.replace('_', ' ').title()}")
-                    summary_data['Giá Trị Đạt Được'].append(achieved_value)
-                    summary_data['Ràng Buộc Cố Định (nếu có)'].append(f"{operator} {value:.2f}")
-
+                     summary_data['Chỉ Số'].append(f"Custom: {nutrient.replace('_', ' ').title()}")
+                     summary_data['Giá Trị Đạt Được (Tổng)'].append(f"{achieved_value:.2f}")
+                     summary_data['Ràng Buộc Mục Tiêu/Cố Định'].append(f"{operator} {value:.2f}")
+            
             st.table(pd.DataFrame(summary_data))
             
         else:
