@@ -35,7 +35,7 @@ DEFAULT_QUANTITY_CONSTRAINTS_DF = pd.DataFrame({
     'Max_Quantity': [2]
 })
 
-# --- HÀM TỐI ƯU HÓA (PuLP) (Giữ nguyên logic chính) ---
+# --- HÀM TỐI ƯU HÓA (PuLP) ---
 def run_optimization(foods_data: dict, custom_constraints: List[CustomConstraint], quantity_constraints: List[QuantityConstraint]):
     """
     Hàm giải mô hình tối ưu hóa ăn trưa sử dụng PuLP.
@@ -61,9 +61,11 @@ def run_optimization(foods_data: dict, custom_constraints: List[CustomConstraint
         if food_name in food_names:
             var = x[food_name]
             
+            # Cập nhật lowBound
             if isinstance(min_q, (int, float)) and min_q >= 0:
                 var.lowBound = int(round(min_q)) 
                 
+            # Thêm ràng buộc Max_Quantity
             if isinstance(max_q, (int, float)) and max_q >= 0:
                 model += (var <= max_q, f"Quantity_Max_{food_name}")
 
@@ -114,6 +116,7 @@ def run_optimization(foods_data: dict, custom_constraints: List[CustomConstraint
     try:
         model.solve()
     except Exception as e:
+        # Xử lý lỗi PuLP chung
         return None, f"Lỗi trong quá trình giải mô hình: {e}"
 
     if model.status == pulp.LpStatusOptimal:
@@ -133,16 +136,16 @@ def main():
 
     st.divider()
     
-    ## 1. PHẦN ĐỊNH NGHĨA CỘT (CHẤT DINH DƯỠNG)
-    st.header("1. Định nghĩa Cột (Chất dinh dưỡng)")
-    st.markdown("Nhập tất cả tên cột bạn muốn sử dụng, cách nhau bởi dấu phẩy, **viết liền không dấu** (ví dụ: `cost, total_cal, protein, fiber, sugar`).")
-    st.markdown("⚠️ **`cost`** là cột bắt buộc.")
+    ## 1. PHẦN ĐỊNH NGHĨA CỘT VÀ NHẬP DỮ LIỆU
+    st.header("1. Định nghĩa Cột và Dữ liệu Thực phẩm")
+    
+    # --- 1.1 Định nghĩa Cột (Chất dinh dưỡng) ---
+    st.subheader("1.1 Định nghĩa Tên Cột Chất Dinh Dưỡng")
+    st.markdown("Nhập tất cả tên cột bạn muốn sử dụng, cách nhau bởi dấu phẩy, **viết liền không dấu** (ví dụ: `cost, protein, fiber`). **`cost`** là cột bắt buộc.")
 
-    # Khởi tạo và lấy danh sách cột từ input
     if 'nutrient_columns_str' not in st.session_state:
         st.session_state.nutrient_columns_str = ', '.join(DEFAULT_COLUMNS)
     
-    # Input cho danh sách cột
     columns_str = st.text_input(
         "Danh sách tên cột (Chất dinh dưỡng):",
         value=st.session_state.nutrient_columns_str,
@@ -150,49 +153,38 @@ def main():
     )
     st.session_state.nutrient_columns_str = columns_str
     
-    # Xử lý danh sách cột
+    # Xử lý danh sách cột và kiểm tra lỗi
     input_columns = [col.strip() for col in columns_str.split(',') if col.strip()]
-    if not input_columns:
-        st.error("❌ Danh sách cột không hợp lệ.")
+    if not input_columns or 'cost' not in input_columns:
+        st.error("❌ Cột **`cost`** là bắt buộc và danh sách cột không được để trống.")
         return
 
-    # Lọc và đảm bảo 'cost' luôn là cột đầu tiên
-    if 'cost' in input_columns:
-        valid_attributes = ['cost'] + [col for col in input_columns if col != 'cost']
-    else:
-        st.error("❌ Cột **`cost`** là bắt buộc để tối ưu hóa.")
-        return
-    
+    valid_attributes = ['cost'] + [col for col in input_columns if col != 'cost']
     st.markdown(f"**Các cột đang được sử dụng:** `{', '.join(valid_attributes)}`")
 
-    # --- 1.1 Khởi tạo/Cập nhật DataFrame Thực phẩm ---
+    # --- 1.2 Khởi tạo/Cập nhật DataFrame Thực phẩm ---
     
+    # Logic khởi tạo DataFrame để đảm bảo cột ổn định
     if 'editable_df' not in st.session_state:
-        # Lần đầu tiên, tạo từ DEFAULT_FOODS_DICT
         st.session_state.editable_df = pd.DataFrame.from_dict(DEFAULT_FOODS_DICT, orient='index').rename_axis('food_name')
         
-        # Thêm các cột mới nếu có
-        for col in valid_attributes:
-            if col not in st.session_state.editable_df.columns:
-                 st.session_state.editable_df[col] = 0.0
-
-    # Lấy dữ liệu hiện tại (các hàng)
+    # Tạo lại DataFrame với các cột mới và dữ liệu cũ
     current_data = st.session_state.editable_df.reset_index().to_dict('records')
-    current_index_name = st.session_state.editable_df.index.name
+    index_name = st.session_state.editable_df.index.name
     
-    # Tạo lại DataFrame với các cột mới
-    new_df = pd.DataFrame(current_data).set_index(current_index_name)
-
-    # Đảm bảo new_df chỉ chứa các cột hợp lệ
-    missing_cols = [col for col in valid_attributes if col not in new_df.columns]
-    for col in missing_cols:
-        new_df[col] = 0.0 # Thêm cột mới với giá trị 0
+    # Tạo DF mới chỉ với các cột hợp lệ
+    new_df = pd.DataFrame(current_data).set_index(index_name) if current_data else pd.DataFrame(columns=[index_name])
     
-    # Giữ lại các cột theo thứ tự mới
+    # Thêm cột mới và giữ lại thứ tự
+    for col in valid_attributes:
+        if col not in new_df.columns:
+             new_df[col] = 0.0
+    
+    # Lọc lại các cột theo thứ tự định nghĩa
     new_df = new_df[[col for col in valid_attributes]]
     st.session_state.editable_df = new_df
-    
-    # --- 1.2 Hiển thị data_editor cho DỮ LIỆU ---
+
+    # --- 1.3 Hiển thị data_editor cho DỮ LIỆU ---
     st.subheader("1.2 Bảng dữ liệu Thực phẩm")
     st.markdown("Thêm/xóa hàng (món ăn) và nhập giá trị cho từng chất dinh dưỡng.")
 
@@ -214,17 +206,18 @@ def main():
 
     st.session_state.editable_df = edited_df.copy()
 
-    # Chuyển DataFrame đã chỉnh sửa về dict cho PuLP
-    foods_input = edited_df.to_dict('index')
+    # --- BƯỚC LÀM SẠCH VÀ CHUYỂN ĐỔI DỮ LIỆU (KHẮC PHỤC LỖI NaN) ---
+    cleaned_df = edited_df.copy()
+    cleaned_df = cleaned_df[cleaned_df.index.notna()] # Loại bỏ hàng không có tên
+    cleaned_df = cleaned_df.fillna(0.0) # Thay thế NaN bằng 0.0 (Quan trọng cho PuLP)
+    
+    foods_input = cleaned_df.to_dict('index')
 
-    if not edited_df.empty:
-        food_names = list(edited_df.index)
+    if not cleaned_df.empty:
+        food_names = list(cleaned_df.index)
+        data_is_valid = True
     else:
         food_names = []
-
-    # --- KIỂM TRA LOGIC CƠ BẢN ---
-    data_is_valid = True
-    if 'cost' not in valid_attributes:
         data_is_valid = False
 
     st.divider()
@@ -237,21 +230,19 @@ def main():
     with col_q:
         st.subheader("2.1 Giới hạn Số lượng Thực phẩm")
         
-        # --- Bảng giới hạn số lượng (Logic khởi tạo đã được tối ưu) ---
+        # --- Bảng giới hạn số lượng ---
         if 'quantity_constraints_df' not in st.session_state:
             st.session_state.quantity_constraints_df = DEFAULT_QUANTITY_CONSTRAINTS_DF.copy()
 
-        # Cập nhật DataFrame ràng buộc để khớp với danh sách food_names hiện tại
         initial_q_data = []
         for name in food_names:
-            # Tìm ràng buộc cũ nếu có, nếu không đặt mặc định
             existing_constraint = st.session_state.quantity_constraints_df[
                 st.session_state.quantity_constraints_df['Food_Name'] == name
             ]
             if not existing_constraint.empty:
                 initial_q_data.append(existing_constraint.iloc[0].to_dict())
             else:
-                # Đặt giá trị mặc định cho món ăn mới
+                # Thiết lập mặc định cho món ăn mới
                 min_q = 2 if name == 'bread' else 0
                 max_q = 2 if name == 'bread' else 1000
                 initial_q_data.append({'Food_Name': name, 'Min_Quantity': min_q, 'Max_Quantity': max_q})
@@ -262,10 +253,7 @@ def main():
             initial_q_df,
             column_config={
                 "Food_Name": st.column_config.SelectboxColumn(
-                    "Tên thực phẩm",
-                    options=food_names,
-                    required=True,
-                    disabled=True,
+                    "Tên thực phẩm", options=food_names, required=True, disabled=True,
                 ),
                 "Min_Quantity": st.column_config.NumberColumn(
                     "Tối thiểu", min_value=0, format="%d", help="Số lượng tối thiểu (số nguyên)."
@@ -279,24 +267,20 @@ def main():
             key="quantity_constraints_editor"
         )
         
-        # Lưu lại trạng thái
         st.session_state.quantity_constraints_df = quantity_constraints_df.copy()
         quantity_constraints = quantity_constraints_df.to_dict('records')
 
     with col_c:
         st.subheader("2.2 Ràng Buộc Tổng Hợp")
-        st.markdown(f"Giới hạn tổng giá trị cho một chất dinh dưỡng bất kỳ.")
+        st.markdown(f"**Các chất dinh dưỡng hợp lệ:** `{', '.join(valid_attributes)}`")
         
         operator_options = ['>=', '<=', '=']
 
-        # --- Bảng ràng buộc tùy chỉnh ---
         custom_constraints_df = st.data_editor(
             DEFAULT_CONSTRAINTS_DF,
             column_config={
                 "Nutrient": st.column_config.SelectboxColumn(
-                    "Chất dinh dưỡng",
-                    options=valid_attributes, # Sử dụng danh sách cột ổn định
-                    required=True,
+                    "Chất dinh dưỡng", options=valid_attributes, required=True,
                     help="Chọn thuộc tính của thực phẩm (Tên cột)."
                 ),
                 "Operator": st.column_config.SelectboxColumn(
@@ -317,7 +301,7 @@ def main():
     ## 3. PHẦN CHẠY MÔ HÌNH VÀ KẾT QUẢ
     st.header("3. Kết quả tối ưu hóa")
 
-    if st.button("🚀 Chạy mô hình tối ưu", disabled=not data_is_valid or edited_df.empty):
+    if st.button("🚀 Chạy mô hình tối ưu", disabled=not data_is_valid or cleaned_df.empty):
 
         optimal_cost, result_data = run_optimization(foods_input, custom_constraints, quantity_constraints)
 
@@ -331,6 +315,7 @@ def main():
             solution_df = pd.DataFrame(
                 result_data.items(), columns=['Thực phẩm', 'Số lượng tối ưu']
             )
+            solution_df['Số lượng tối ưu'] = solution_df['Số lượng tối ưu'].astype(int)
             with col2:
                 st.dataframe(solution_df, use_container_width=True, hide_index=True)
 
