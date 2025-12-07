@@ -265,8 +265,8 @@ def main():
                 if attr == 'cost': fixed_req = 'Minimize'
                 elif attr == 'total_cal': fixed_req = '400 - 600'
                 elif attr == 'cal_fat': fixed_req = f'<= 30% ({0.3 * current_value:.2f} kcal)' if 'total_cal' in valid_attributes else 'N/A'
-                elif attr == 'vit_c': fixed_req = '>= 60 mg'
-                elif attr == 'protein': fixed_req = '>= 12 g'
+                elif attr == 'vit_c': fixed_req = '≥ 60 mg'
+                elif attr == 'protein': fixed_req = '≥ 12 g'
 
                 summary_data['Ràng Buộc Cố Định (nếu có)'].append(fixed_req)
 
@@ -293,3 +293,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
