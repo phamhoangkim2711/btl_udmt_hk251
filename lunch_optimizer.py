@@ -31,7 +31,7 @@ DEFAULT_CONSTRAINTS_DF = pd.DataFrame({
     'Value': [200.0, 15.0]
 })
 
-# DataFrame mặc định cho giới hạn số lượng (Không thay đổi)
+# DataFrame mặc định cho giới hạn số lượng
 DEFAULT_QUANTITY_CONSTRAINTS_DF = pd.DataFrame({
     'Food_Name': ['bread'],
     'Min_Quantity': [2], 
@@ -42,8 +42,6 @@ DEFAULT_QUANTITY_CONSTRAINTS_DF = pd.DataFrame({
 def run_optimization(foods_data: dict, custom_constraints: List[CustomConstraint], quantity_constraints: List[QuantityConstraint]):
     """
     Hàm giải mô hình tối ưu hóa ăn trưa sử dụng PuLP.
-    Ghi chú: Logic kiểm tra total_cal >= cal_fat đã được chuyển lên main() để báo lỗi tức thời, 
-    nhưng vẫn giữ lại logic kiểm tra và ràng buộc PuLP như một lớp bảo vệ cuối.
     """
     if not foods_data:
         return None, "Lỗi: Không có dữ liệu thực phẩm để chạy mô hình."
@@ -70,7 +68,7 @@ def run_optimization(foods_data: dict, custom_constraints: List[CustomConstraint
             if isinstance(min_q, (int, float)) and min_q >= 0:
                 var.lowBound = int(round(min_q)) 
                 
-            # Thêm ràng buộc Max_Quantity (chỉ thêm nếu là số)
+            # Thêm ràng buộc Max_Quantity
             if isinstance(max_q, (int, float)) and max_q >= 0:
                 model += (var <= max_q, f"Quantity_Max_{food_name}")
 
@@ -85,28 +83,12 @@ def run_optimization(foods_data: dict, custom_constraints: List[CustomConstraint
 
     # 4. RÀNG BUỘC CỐ ĐỊNH 
     if 'total_cal' in valid_food_attributes and 'cal_fat' in valid_food_attributes:
-        
-        # Lớp bảo vệ cuối cùng cho ràng buộc Total Cal >= Cal Fat
-        for food_name in food_names:
-            food_attrs = foods_data[food_name]
-            cal_fat_val = food_attrs.get('cal_fat', 0.0)
-            total_cal_val = food_attrs.get('total_cal', 0.0)
-
-            # Kiểm tra lỗi dữ liệu đầu vào (nếu không được bắt ở main)
-            if total_cal_val < cal_fat_val:
-                return None, f"Lỗi dữ liệu: 'total_cal' ({total_cal_val}) của **{food_name}** nhỏ hơn 'cal_fat' ({cal_fat_val})."
-            
-            model += (
-                x[food_name] * (total_cal_val - cal_fat_val) >= 0,
-                f"Data_Integrity_{food_name}_TotalCal_GE_CalFat"
-            )
-        
         Total_Cal_Expr = pulp.lpSum(foods_data[name]['total_cal'] * x[name] for name in food_names)
         Cal_Fat_Expr = pulp.lpSum(foods_data[name]['cal_fat'] * x[name] for name in food_names)
         model += (Total_Cal_Expr >= 400, "Fixed_Min_Total_Calories")
         model += (Total_Cal_Expr <= 600, "Fixed_Max_Total_Calories")
         model += (Cal_Fat_Expr - 0.30 * Total_Cal_Expr <= 0, "Fixed_Max_30_Percent_Fat_Calories")
-        
+    
     if 'vit_c' in valid_food_attributes:
         model += (pulp.lpSum(foods_data[name]['vit_c'] * x[name] for name in food_names) >= 60, "Fixed_Min_Vitamin_C")
 
@@ -157,10 +139,6 @@ def main():
 
     st.divider()
     
-    # Khởi tạo trạng thái kiểm tra lỗi (mặc định là hợp lệ)
-    if 'data_valid_for_run' not in st.session_state:
-        st.session_state['data_valid_for_run'] = True
-    
     ## 1. PHẦN ĐỊNH NGHĨA CỘT VÀ NHẬP DỮ LIỆU
     st.header("1. Định nghĩa Cột và Dữ liệu Thực phẩm")
     
@@ -189,18 +167,23 @@ def main():
 
     # --- 1.2 Khởi tạo/Cập nhật DataFrame Thực phẩm ---
     
+    # Logic khởi tạo DataFrame để đảm bảo cột ổn định
     if 'editable_df' not in st.session_state:
         st.session_state.editable_df = pd.DataFrame.from_dict(DEFAULT_FOODS_DICT, orient='index').rename_axis('food_name')
-    
+        
+    # Tạo lại DataFrame với các cột mới và dữ liệu cũ
     current_data = st.session_state.editable_df.reset_index().to_dict('records')
     index_name = st.session_state.editable_df.index.name
     
+    # Tạo DF mới chỉ với các cột hợp lệ
     new_df = pd.DataFrame(current_data).set_index(index_name) if current_data else pd.DataFrame(columns=[index_name])
     
+    # Thêm cột mới và giữ lại thứ tự
     for col in valid_attributes:
         if col not in new_df.columns:
              new_df[col] = 0.0
     
+    # Lọc lại các cột theo thứ tự định nghĩa
     new_df = new_df[[col for col in valid_attributes]]
     st.session_state.editable_df = new_df
 
@@ -229,39 +212,17 @@ def main():
     # --- BƯỚC LÀM SẠCH VÀ CHUYỂN ĐỔI DỮ LIỆU (KHẮC PHỤC LỖI NaN) ---
     cleaned_df = edited_df.copy()
     cleaned_df = cleaned_df[cleaned_df.index.notna()] # Loại bỏ hàng không có tên
-    cleaned_df = cleaned_df.fillna(0.0) # Thay thế NaN bằng 0.0
-
-    # =========================================================================
-    # *** LOGIC KIỂM TRA LỖI DỮ LIỆU NGAY TỨC THỜI (Instant Error Check) ***
-    data_is_valid = True 
-
-    # Chỉ kiểm tra nếu hai cột cần thiết tồn tại trong dữ liệu hiện tại
-    if 'total_cal' in cleaned_df.columns and 'cal_fat' in cleaned_df.columns and not cleaned_df.empty:
-        # Tìm các hàng vi phạm (cal_fat > total_cal)
-        violation_rows = cleaned_df[cleaned_df['total_cal'] < cleaned_df['cal_fat']]
-        
-        if not violation_rows.empty:
-            data_is_valid = False
-            st.error(
-                "❌ **CẢNH BÁO LỖI DỮ LIỆU CẦN SỬA** (Báo lỗi tức thời):"
-                " Calories từ chất béo (`cal_fat`) không thể lớn hơn Tổng Calories (`total_cal`)."
-            )
-            st.dataframe(violation_rows[['cal_fat', 'total_cal']], column_order=['cal_fat', 'total_cal'])
-            st.markdown("---")
-            
-    st.session_state['data_valid_for_run'] = data_is_valid # Cập nhật trạng thái Session
-    
-    # Chuẩn bị dữ liệu cho PuLP
-    if not cleaned_df.empty:
-        food_names = list(cleaned_df.index)
-    else:
-        food_names = []
-        st.session_state['data_valid_for_run'] = False
-        data_is_valid = False
+    cleaned_df = cleaned_df.fillna(0.0) # Thay thế NaN bằng 0.0 (Quan trọng cho PuLP)
     
     foods_input = cleaned_df.to_dict('index')
-    # =========================================================================
-    
+
+    if not cleaned_df.empty:
+        food_names = list(cleaned_df.index)
+        data_is_valid = True
+    else:
+        food_names = []
+        data_is_valid = False
+
     st.divider()
 
     ## 2. RÀNG BUỘC SỐ LƯỢNG VÀ RÀNG BUỘC TÙY CHỈNH
@@ -284,9 +245,9 @@ def main():
             if not existing_constraint.empty:
                 initial_q_data.append(existing_constraint.iloc[0].to_dict())
             else:
-                # Cập nhật: Max_Quantity mặc định là None (không giới hạn)
+                # Thiết lập mặc định cho món ăn mới
                 min_q = 2 if name == 'bread' else 0
-                max_q = 2 if name == 'bread' else None 
+                max_q = 2 if name == 'bread' else 1000
                 initial_q_data.append({'Food_Name': name, 'Min_Quantity': min_q, 'Max_Quantity': max_q})
 
         initial_q_df = pd.DataFrame(initial_q_data)
@@ -301,7 +262,7 @@ def main():
                     "Tối thiểu", min_value=0, format="%d", help="Số lượng tối thiểu (số nguyên)."
                 ),
                 "Max_Quantity": st.column_config.NumberColumn(
-                    "Tối đa", min_value=0, format="%d", help="Số lượng tối đa (số nguyên). **Để trống = Không giới hạn**"
+                    "Tối đa", min_value=0, format="%d", help="Số lượng tối đa (số nguyên)."
                 )
             },
             num_rows="fixed",
@@ -343,8 +304,7 @@ def main():
     ## 3. PHẦN CHẠY MÔ HÌNH VÀ KẾT QUẢ
     st.header("3. Kết quả tối ưu hóa")
 
-    # Nút bị vô hiệu hóa nếu dữ liệu không hợp lệ hoặc bảng trống
-    if st.button("🚀 Chạy mô hình tối ưu", disabled=not st.session_state['data_valid_for_run'] or cleaned_df.empty):
+    if st.button("🚀 Chạy mô hình tối ưu", disabled=not data_is_valid or cleaned_df.empty):
 
         optimal_cost, result_data = run_optimization(foods_input, custom_constraints, quantity_constraints)
 
@@ -397,10 +357,10 @@ def main():
                 
                 if nutrient in valid_attributes and operator in ['>=', '<=', '=']:
                      summary_list.append({
-                         'Chỉ Số': f"**Custom: {nutrient.replace('_', ' ').title()}**",
-                         'Giá Trị Đạt Được': f"{calculated_values.get(nutrient, 0):.2f}",
-                         'Ràng Buộc Cố Định/Mục Tiêu': f"{operator} {value:.2f}"
-                        })
+                        'Chỉ Số': f"**Custom: {nutrient.replace('_', ' ').title()}**",
+                        'Giá Trị Đạt Được': f"{calculated_values.get(nutrient, 0):.2f}",
+                        'Ràng Buộc Cố Định/Mục Tiêu': f"{operator} {value:.2f}"
+                    })
 
             st.table(pd.DataFrame(summary_list))
 
