@@ -213,15 +213,37 @@ def main():
     cleaned_df = edited_df.copy()
     cleaned_df = cleaned_df[cleaned_df.index.notna()] # Loại bỏ hàng không có tên
     cleaned_df = cleaned_df.fillna(0.0) # Thay thế NaN bằng 0.0 (Quan trọng cho PuLP)
-    
-    foods_input = cleaned_df.to_dict('index')
 
+    # =========================================================================
+    # *** LOGIC KIỂM TRA LỖI DỮ LIỆU NGAY TỨC THỜI (Instant Error Check) ***
+    data_is_valid = True
+
+    # Chỉ kiểm tra nếu hai cột cần thiết tồn tại trong dữ liệu hiện tại
+    if 'total_cal' in cleaned_df.columns and 'cal_fat' in cleaned_df.columns and not cleaned_df.empty:
+        # Tìm các hàng vi phạm (cal_fat > total_cal)
+        violation_rows = cleaned_df[cleaned_df['total_cal'] < cleaned_df['cal_fat']]
+
+        if not violation_rows.empty:
+            data_is_valid = False
+            st.error(
+                "❌ **CẢNH BÁO LỖI DỮ LIỆU CẦN SỬA** (Báo lỗi tức thời):"
+                " Calories từ chất béo (`cal_fat`) không thể lớn hơn Tổng Calories (`total_cal`)."
+            )
+            st.dataframe(violation_rows[['cal_fat', 'total_cal']], column_order=['cal_fat', 'total_cal'])
+            st.markdown("---")
+
+    st.session_state['data_valid_for_run'] = data_is_valid # Cập nhật trạng thái Session
+
+    # Chuẩn bị dữ liệu cho PuLP
     if not cleaned_df.empty:
         food_names = list(cleaned_df.index)
-        data_is_valid = True
     else:
         food_names = []
+        st.session_state['data_valid_for_run'] = False
         data_is_valid = False
+
+    foods_input = cleaned_df.to_dict('index')
+
 
     st.divider()
 
@@ -371,6 +393,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
