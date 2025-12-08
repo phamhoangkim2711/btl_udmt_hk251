@@ -247,7 +247,7 @@ def main():
             else:
                 # Thiết lập mặc định cho món ăn mới
                 min_q = 2 if name == 'bread' else 0
-                max_q = 2 if name == 'bread' else 1000
+                max_q = 2 if name == 'bread' else None
                 initial_q_data.append({'Food_Name': name, 'Min_Quantity': min_q, 'Max_Quantity': max_q})
 
         initial_q_df = pd.DataFrame(initial_q_data)
@@ -371,6 +371,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
